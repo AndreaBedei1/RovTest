@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>rov_bringup</name>
+  <version>0.1.0</version>
+  <description>Launch and configuration for the RovLibrary ROS 2 foundation.</description>
+  <maintainer email="andrea@example.com">Andrea</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rov_mavlink_bridge</exec_depend>
+  <exec_depend>rov_msgs</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+</package>

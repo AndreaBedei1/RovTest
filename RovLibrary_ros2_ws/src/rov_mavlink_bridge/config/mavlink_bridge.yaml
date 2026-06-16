@@ -1,0 +1,17 @@
+mavlink_bridge:
+  ros__parameters:
+    mavlink_endpoint: "udpin:0.0.0.0:14550"
+    heartbeat_timeout_s: 15.0
+    source_system: 255
+    source_component: 190
+    telemetry_publish_hz: 5.0
+    connection_publish_hz: 1.0
+    connect_on_startup: true
+    allowed_modes:
+      - MANUAL
+      - STABILIZE
+      - DEPTH_HOLD
+      - POSHOLD
+      - ALT_HOLD
+      - SURFACE
+
