@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rov_msgs.msg import ConnectionStatus, VehicleState
@@ -37,6 +38,9 @@ class ControlManagerNode(Node):
 
         self._declare_parameters()
         self._lock = threading.Lock()
+        self._subscription_group = MutuallyExclusiveCallbackGroup()
+        self._public_service_group = MutuallyExclusiveCallbackGroup()
+        self._internal_client_group = ReentrantCallbackGroup()
         self._safety = SafetySnapshot()
         self._timeout_s = float(self.get_parameter("service_timeout_s").value)
         self._require_armed_lights = bool(self.get_parameter("require_armed_for_lights_on").value)
@@ -49,40 +53,120 @@ class ControlManagerNode(Node):
             str(self.get_parameter("connection_status_topic").value),
             self._on_connection_status,
             10,
+            callback_group=self._subscription_group,
         )
         self.create_subscription(
             VehicleState,
             str(self.get_parameter("vehicle_state_topic").value),
             self._on_vehicle_state,
             10,
+            callback_group=self._subscription_group,
         )
 
-        self._arm_client = self.create_client(Trigger, str(self.get_parameter("internal_arm_service").value))
+        self._arm_client = self.create_client(
+            Trigger,
+            str(self.get_parameter("internal_arm_service").value),
+            callback_group=self._internal_client_group,
+        )
         self._disarm_client = self.create_client(
             Trigger,
             str(self.get_parameter("internal_disarm_service").value),
+            callback_group=self._internal_client_group,
         )
         self._set_mode_client = self.create_client(
             SetFlightMode,
             str(self.get_parameter("internal_set_flight_mode_service").value),
+            callback_group=self._internal_client_group,
         )
         prefix = str(self.get_parameter("internal_peripheral_service_prefix").value).rstrip("/")
-        self._lights_client = self.create_client(SetLights, f"{prefix}/lights/set")
-        self._laser_client = self.create_client(SetLaser, f"{prefix}/laser/set")
-        self._gripper_client = self.create_client(GripperCommand, f"{prefix}/gripper/command")
-        self._tilt_set_client = self.create_client(SetCameraTilt, f"{prefix}/camera_tilt/set")
-        self._tilt_get_client = self.create_client(GetCameraTilt, f"{prefix}/camera_tilt/get")
+        self._lights_client = self.create_client(
+            SetLights,
+            f"{prefix}/lights/set",
+            callback_group=self._internal_client_group,
+        )
+        self._laser_client = self.create_client(
+            SetLaser,
+            f"{prefix}/laser/set",
+            callback_group=self._internal_client_group,
+        )
+        self._gripper_client = self.create_client(
+            GripperCommand,
+            f"{prefix}/gripper/command",
+            callback_group=self._internal_client_group,
+        )
+        self._tilt_set_client = self.create_client(
+            SetCameraTilt,
+            f"{prefix}/camera_tilt/set",
+            callback_group=self._internal_client_group,
+        )
+        self._tilt_get_client = self.create_client(
+            GetCameraTilt,
+            f"{prefix}/camera_tilt/get",
+            callback_group=self._internal_client_group,
+        )
 
-        self.create_service(Trigger, "control/arm", self._handle_arm)
-        self.create_service(Trigger, "control/disarm", self._handle_disarm)
-        self.create_service(SetFlightMode, "control/set_flight_mode", self._handle_set_flight_mode)
-        self.create_service(SetLights, "control/lights/set", self._handle_set_lights)
-        self.create_service(SetLaser, "control/laser/set", self._handle_set_laser)
-        self.create_service(Trigger, "control/gripper/open", self._handle_gripper_open)
-        self.create_service(Trigger, "control/gripper/close", self._handle_gripper_close)
-        self.create_service(Trigger, "control/gripper/stop", self._handle_gripper_stop)
-        self.create_service(SetCameraTilt, "control/camera_tilt/set", self._handle_set_camera_tilt)
-        self.create_service(GetCameraTilt, "control/camera_tilt/get", self._handle_get_camera_tilt)
+        self._public_services = [
+            self.create_service(
+                Trigger,
+                "control/arm",
+                self._handle_arm,
+                callback_group=self._public_service_group,
+            ),
+            self.create_service(
+                Trigger,
+                "control/disarm",
+                self._handle_disarm,
+                callback_group=self._public_service_group,
+            ),
+            self.create_service(
+                SetFlightMode,
+                "control/set_flight_mode",
+                self._handle_set_flight_mode,
+                callback_group=self._public_service_group,
+            ),
+            self.create_service(
+                SetLights,
+                "control/lights/set",
+                self._handle_set_lights,
+                callback_group=self._public_service_group,
+            ),
+            self.create_service(
+                SetLaser,
+                "control/laser/set",
+                self._handle_set_laser,
+                callback_group=self._public_service_group,
+            ),
+            self.create_service(
+                Trigger,
+                "control/gripper/open",
+                self._handle_gripper_open,
+                callback_group=self._public_service_group,
+            ),
+            self.create_service(
+                Trigger,
+                "control/gripper/close",
+                self._handle_gripper_close,
+                callback_group=self._public_service_group,
+            ),
+            self.create_service(
+                Trigger,
+                "control/gripper/stop",
+                self._handle_gripper_stop,
+                callback_group=self._public_service_group,
+            ),
+            self.create_service(
+                SetCameraTilt,
+                "control/camera_tilt/set",
+                self._handle_set_camera_tilt,
+                callback_group=self._public_service_group,
+            ),
+            self.create_service(
+                GetCameraTilt,
+                "control/camera_tilt/get",
+                self._handle_get_camera_tilt,
+                callback_group=self._public_service_group,
+            ),
+        ]
 
         self.get_logger().info("Control manager ready. Public command services are under control/*.")
 

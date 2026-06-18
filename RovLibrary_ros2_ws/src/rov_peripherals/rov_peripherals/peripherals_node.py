@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.exceptions import ParameterUninitializedException
 from rclpy.node import Node
@@ -41,23 +42,40 @@ def _coerce_int_array_param(value: Any, default: list[int]) -> list[int]:
 class RosMavlinkCommandPort:
     """Adapter from peripheral backend commands to internal MAVLink services."""
 
-    def __init__(self, node: Node, service_prefix: str, timeout_s: float) -> None:
+    def __init__(
+        self,
+        node: Node,
+        service_prefix: str,
+        timeout_s: float,
+        callback_group: ReentrantCallbackGroup | None = None,
+    ) -> None:
         self.node = node
         self.service_prefix = service_prefix.rstrip("/")
         self.timeout_s = max(0.1, float(timeout_s))
-        self._set_servo = node.create_client(SetServo, f"{self.service_prefix}/set_servo")
-        self._set_relay = node.create_client(SetRelay, f"{self.service_prefix}/set_relay")
+        self._set_servo = node.create_client(
+            SetServo,
+            f"{self.service_prefix}/set_servo",
+            callback_group=callback_group,
+        )
+        self._set_relay = node.create_client(
+            SetRelay,
+            f"{self.service_prefix}/set_relay",
+            callback_group=callback_group,
+        )
         self._set_rc_override = node.create_client(
             SetRcOverride,
             f"{self.service_prefix}/set_rc_override",
+            callback_group=callback_group,
         )
         self._set_mount_mode = node.create_client(
             SetMountMode,
             f"{self.service_prefix}/set_mount_mode",
+            callback_group=callback_group,
         )
         self._set_mount_control = node.create_client(
             SetMountControl,
             f"{self.service_prefix}/set_mount_control",
+            callback_group=callback_group,
         )
 
     def set_servo_group(
@@ -143,30 +161,53 @@ class PeripheralsNode(Node):
         super().__init__("peripherals")
 
         self._declare_parameters()
+        self._service_group = MutuallyExclusiveCallbackGroup()
+        self._mavlink_client_group = ReentrantCallbackGroup()
         cfg = self._build_config()
         service_prefix = str(self.get_parameter("mavlink_service_prefix").value)
         timeout_s = float(self.get_parameter("service_timeout_s").value)
 
-        command_port = RosMavlinkCommandPort(self, service_prefix, timeout_s)
+        command_port = RosMavlinkCommandPort(
+            self,
+            service_prefix,
+            timeout_s,
+            self._mavlink_client_group,
+        )
+        self._command_port = command_port
         self._backend = PeripheralBackend(cfg, command_port)
 
-        self.create_service(SetLights, "internal/peripherals/lights/set", self._handle_set_lights)
-        self.create_service(SetLaser, "internal/peripherals/laser/set", self._handle_set_laser)
-        self.create_service(
-            GripperCommand,
-            "internal/peripherals/gripper/command",
-            self._handle_gripper_command,
-        )
-        self.create_service(
-            SetCameraTilt,
-            "internal/peripherals/camera_tilt/set",
-            self._handle_set_camera_tilt,
-        )
-        self.create_service(
-            GetCameraTilt,
-            "internal/peripherals/camera_tilt/get",
-            self._handle_get_camera_tilt,
-        )
+        self._services = [
+            self.create_service(
+                SetLights,
+                "internal/peripherals/lights/set",
+                self._handle_set_lights,
+                callback_group=self._service_group,
+            ),
+            self.create_service(
+                SetLaser,
+                "internal/peripherals/laser/set",
+                self._handle_set_laser,
+                callback_group=self._service_group,
+            ),
+            self.create_service(
+                GripperCommand,
+                "internal/peripherals/gripper/command",
+                self._handle_gripper_command,
+                callback_group=self._service_group,
+            ),
+            self.create_service(
+                SetCameraTilt,
+                "internal/peripherals/camera_tilt/set",
+                self._handle_set_camera_tilt,
+                callback_group=self._service_group,
+            ),
+            self.create_service(
+                GetCameraTilt,
+                "internal/peripherals/camera_tilt/get",
+                self._handle_get_camera_tilt,
+                callback_group=self._service_group,
+            ),
+        ]
 
         self.get_logger().info("Peripheral services ready.")
 
