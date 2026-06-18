@@ -132,42 +132,66 @@ Adjust them in `src/rov_bringup/config/stage1.yaml` or
 ## Windows Setup
 
 Use a normal `cmd.exe` or Anaconda Prompt where `conda` is on `PATH`.
-The setup script creates or reuses a conda environment named `ros2` with
-Python 3.8.3, installs the pinned Python requirements, checks for ROS 2 Humble,
-and runs preflight.
+
+This machine currently uses the downloaded ROS 2 Lyrical Windows zip extracted
+to:
+
+```text
+C:\dev\ros2_lyrical
+```
+
+ROS 2 Lyrical for Windows is built for Python 3.12, so the reproducible local
+environment is `ros2_lyrical` with Python 3.12.3:
 
 ```bat
 cd /d C:\Users\Andrea\Desktop\RovTest\RovLibrary_ros2_ws
+set ROS2_SETUP_BAT=C:\dev\ros2_lyrical\setup.bat
+set ROS_DISTRO_EXPECTED=lyrical
+set ENV_NAME=ros2_lyrical
+set PYTHON_VERSION=3.12.3
 scripts\setup_windows_ros2_conda.bat
 ```
 
-If ROS 2 Humble is installed somewhere non-standard, set `ROS2_SETUP_BAT` first:
+The setup script creates or reuses the conda environment, installs colcon,
+installs the workspace Python requirements, runs the ROS 2 Windows patch script
+when present, installs the conda `yaml` runtime needed for `yaml.dll`, and then
+runs preflight.
+
+The interface package `rov_msgs` needs the Visual Studio C++ build tools. If
+`vcvars64.bat` is missing, install them once from an elevated or normal shell
+that can run `winget`:
 
 ```bat
-cd /d C:\Users\Andrea\Desktop\RovTest\RovLibrary_ros2_ws
-set ROS2_SETUP_BAT=C:\dev\ros2_humble\local_setup.bat
-scripts\setup_windows_ros2_conda.bat
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e --source winget --accept-package-agreements --accept-source-agreements --override "--wait --quiet --norestart --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.CMake.Project --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --includeRecommended"
 ```
 
 Manual preflight after opening a fresh shell:
 
 ```bat
 cd /d C:\Users\Andrea\Desktop\RovTest\RovLibrary_ros2_ws
-conda activate ros2
-call C:\dev\ros2_humble\local_setup.bat
+conda activate ros2_lyrical
+call C:\dev\ros2_lyrical\setup.bat
+set ROS_DISTRO_EXPECTED=lyrical
+set EXPECTED_PYTHON_VERSION=3.12.3
 python scripts\preflight_ros2_windows.py
 ```
 
-The Python dependency set is pinned for Windows/Python 3.8.3:
+If you later install ROS 2 Humble for Windows instead, use the Humble/Python
+3.8.3 configuration explicitly:
 
-```text
-fastcrc==0.3.2
-pymavlink==2.4.49
-pytest>=7.0,<9.0
+```bat
+cd /d C:\Users\Andrea\Desktop\RovTest\RovLibrary_ros2_ws
+set ROS2_SETUP_BAT=C:\dev\ros2_humble\local_setup.bat
+set ROS_DISTRO_EXPECTED=humble
+set ENV_NAME=ros2
+set PYTHON_VERSION=3.8.3
+scripts\setup_windows_ros2_conda.bat
 ```
 
-The `fastcrc` pin avoids the failing `fastcrc 0.3.6` source-build path on
-Python 3.8 Windows.
+The dependency file keeps the Python 3.8 Windows `fastcrc` workaround:
+`fastcrc==0.3.2` is used below Python 3.9 so `pymavlink` does not try the
+failing `fastcrc 0.3.6` source-build path. Python 3.12 uses the available
+`fastcrc 0.3.6` wheel.
 
 ## Build
 
@@ -182,17 +206,23 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-On a native Windows ROS 2 shell, use the same workspace path and source the
-generated setup script with:
+On this Windows ROS 2 Lyrical setup, build with:
 
 ```bat
 cd /d C:\Users\Andrea\Desktop\RovTest\RovLibrary_ros2_ws
-conda activate ros2
-call C:\dev\ros2_humble\local_setup.bat
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+conda activate ros2_lyrical
+call C:\dev\ros2_lyrical\setup.bat
 python scripts\preflight_ros2_windows.py
-colcon build --symlink-install
+colcon build --merge-install
 call install\setup.bat
 ```
+
+For a Humble environment, replace the conda environment and setup path with
+`ros2` and `C:\dev\ros2_humble\local_setup.bat`.
+
+`--merge-install` is used on Windows because normal user shells often cannot
+create the symlinks required by `--symlink-install`.
 
 ## Run
 
@@ -265,8 +295,15 @@ colcon test-result --verbose
 Safe local checks:
 
 ```bat
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+conda activate ros2_lyrical
+call C:\dev\ros2_lyrical\setup.bat
+set ROS_DISTRO_EXPECTED=lyrical
+set EXPECTED_PYTHON_VERSION=3.12.3
 python scripts\preflight_ros2_windows.py
 colcon list --base-paths src
+colcon build --merge-install
+call install\setup.bat
 colcon test --event-handlers console_direct+
 colcon test-result --verbose
 ```

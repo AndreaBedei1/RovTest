@@ -11,7 +11,6 @@ import subprocess
 import sys
 
 
-EXPECTED_PYTHON = (3, 8, 3)
 EXPECTED_PACKAGES = {
     "rov_msgs",
     "rov_mavlink_bridge",
@@ -42,15 +41,19 @@ class Reporter:
 def main() -> int:
     repo = Path(__file__).resolve().parents[1]
     reporter = Reporter()
+    expected_python = get_expected_python()
+    expected_distro = get_expected_distro()
 
     print("RovLibrary ROS 2 Windows preflight")
     print(f"Workspace: {repo}")
+    print(f"Expected Python: {format_version(expected_python)}")
+    print(f"Expected ROS_DISTRO: {expected_distro}")
     print()
 
-    check_python(reporter)
+    check_python(reporter, expected_python)
     check_import(reporter, "pymavlink")
     check_import(reporter, "rclpy")
-    check_ros2(reporter)
+    check_ros2(reporter, expected_distro)
     check_colcon(reporter)
     check_workspace_packages(repo, reporter)
 
@@ -69,11 +72,48 @@ def main() -> int:
     return 0
 
 
-def check_python(reporter: Reporter) -> None:
+def get_expected_distro() -> str:
+    configured = os.environ.get("ROS_DISTRO_EXPECTED")
+    if configured:
+        return configured.strip().lower()
+
+    active = os.environ.get("ROS_DISTRO")
+    if active:
+        return active.strip().lower()
+
+    return "humble"
+
+
+def get_expected_python() -> tuple[int, int, int]:
+    configured = os.environ.get("EXPECTED_PYTHON_VERSION") or os.environ.get("PYTHON_VERSION")
+    if configured:
+        try:
+            return parse_version(configured)
+        except ValueError:
+            print(f"[WARN] Invalid EXPECTED_PYTHON_VERSION={configured!r}; using distro default.")
+
+    distro = get_expected_distro()
+    if distro == "lyrical":
+        return (3, 12, 3)
+    return (3, 8, 3)
+
+
+def parse_version(text: str) -> tuple[int, int, int]:
+    parts = text.strip().split(".")
+    if len(parts) != 3:
+        raise ValueError(text)
+    return (int(parts[0]), int(parts[1]), int(parts[2]))
+
+
+def format_version(version: tuple[int, int, int]) -> str:
+    return ".".join(str(part) for part in version)
+
+
+def check_python(reporter: Reporter, expected_python: tuple[int, int, int]) -> None:
     current = sys.version_info[:3]
-    current_text = ".".join(str(part) for part in current)
-    expected_text = ".".join(str(part) for part in EXPECTED_PYTHON)
-    if current == EXPECTED_PYTHON:
+    current_text = format_version(current)
+    expected_text = format_version(expected_python)
+    if current == expected_python:
         reporter.ok("Python version", current_text)
         return
     reporter.fail("Python version", f"{current_text}, expected {expected_text}")
@@ -91,7 +131,7 @@ def check_import(reporter: Reporter, module_name: str) -> None:
     reporter.ok(f"import {module_name}", detail)
 
 
-def check_ros2(reporter: Reporter) -> None:
+def check_ros2(reporter: Reporter, expected_distro: str) -> None:
     ros2_path = shutil.which("ros2")
     if ros2_path is None:
         reporter.fail("ros2 command", "not found on PATH")
@@ -99,12 +139,12 @@ def check_ros2(reporter: Reporter) -> None:
 
     reporter.ok("ros2 command", ros2_path)
     distro = os.environ.get("ROS_DISTRO", "")
-    if distro.lower() == "humble":
+    if distro.lower() == expected_distro:
         reporter.ok("ROS_DISTRO", distro)
     elif distro:
-        reporter.fail("ROS_DISTRO", f"{distro}, expected humble")
+        reporter.fail("ROS_DISTRO", f"{distro}, expected {expected_distro}")
     else:
-        reporter.warn("ROS_DISTRO", "not set; did you source ROS 2 Humble setup.bat?")
+        reporter.warn("ROS_DISTRO", f"not set; did you source ROS 2 {expected_distro} setup.bat?")
 
     result = run_command(["ros2", "--help"])
     if result.returncode == 0:
@@ -203,4 +243,3 @@ def run_command(args: list[str]) -> CommandResult:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

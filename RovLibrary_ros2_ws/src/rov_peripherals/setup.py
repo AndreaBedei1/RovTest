@@ -1,10 +1,25 @@
 from glob import glob
 import os
+import subprocess
+import sys
 
-from setuptools import find_packages, setup
+from setuptools import Command, find_packages, setup
 
 
 package_name = "rov_peripherals"
+
+
+class PyTestCommand(Command):
+    user_options = []
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        raise SystemExit(subprocess.call([sys.executable, "-m", "pytest", "test"]))
 
 setup(
     name=package_name,
@@ -22,7 +37,7 @@ setup(
     maintainer_email="andrea@example.com",
     description="Peripheral command services for the RovLibrary ROS 2 workspace.",
     license="MIT",
-    tests_require=["pytest"],
+    cmdclass={"test": PyTestCommand},
     entry_points={
         "console_scripts": [
             "peripherals_node = rov_peripherals.peripherals_node:main",

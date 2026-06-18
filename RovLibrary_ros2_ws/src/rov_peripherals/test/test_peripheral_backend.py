@@ -1,3 +1,6 @@
+from pathlib import Path
+import unittest
+
 from rov_peripherals.backend import CommandResult, PeripheralBackend
 
 
@@ -26,57 +29,56 @@ class FakePort:
         return CommandResult(True, "ok", int(repeat))
 
 
-def test_lights_percent_maps_to_configured_servo():
-    port = FakePort()
-    backend = PeripheralBackend({"lights": {"default_servos": [13]}}, port)
+class PeripheralBackendTest(unittest.TestCase):
+    def test_lights_percent_maps_to_configured_servo(self):
+        port = FakePort()
+        backend = PeripheralBackend({"lights": {"default_servos": [13]}}, port)
 
-    result = backend.set_lights_percent(50.0)
+        result = backend.set_lights_percent(50.0)
 
-    assert result.success
-    assert backend.state.lights_percent == 50.0
-    assert port.calls[-1] == ("servo", [13], 1500, 2)
+        self.assertTrue(result.success)
+        self.assertEqual(backend.state.lights_percent, 50.0)
+        self.assertEqual(port.calls[-1], ("servo", [13], 1500, 2))
+
+    def test_laser_requires_configured_outputs(self):
+        port = FakePort()
+        backend = PeripheralBackend({"laser": {"control_mode": "relay", "relay_numbers": []}}, port)
+
+        result = backend.set_laser(True)
+
+        self.assertFalse(result.success)
+        self.assertIn("relay_numbers", result.message)
+
+    def test_gripper_open_pulses_then_neutral(self):
+        port = FakePort()
+        backend = PeripheralBackend({}, port)
+
+        result = backend.gripper_command("open", pulse_seconds=0.02)
+
+        self.assertTrue(result.success)
+        self.assertEqual(backend.state.gripper_state, "open")
+        self.assertEqual(port.calls[0][0], "servo")
+        self.assertEqual(port.calls[-1][0], "servo")
+        self.assertEqual(port.calls[-1][2], 1500)
+
+    def test_camera_tilt_mount_initializes_and_steps(self):
+        port = FakePort()
+        backend = PeripheralBackend({}, port)
+
+        result, tilt = backend.set_camera_tilt("up")
+
+        self.assertTrue(result.success)
+        self.assertEqual(tilt.mode, "mount")
+        self.assertEqual(tilt.tilt_centideg, 300)
+        self.assertIn(("mount_mode", 2), port.calls)
+
+    def test_smoke_test_node_source_exists(self):
+        package_dir = Path(__file__).resolve().parents[1]
+
+        self.assertTrue((package_dir / "rov_peripherals" / "hardware_smoke_test.py").exists())
+        self.assertTrue((package_dir / "launch" / "hardware_smoke_test.launch.py").exists())
+        self.assertTrue((package_dir / "config" / "hardware_smoke_test.yaml").exists())
 
 
-def test_laser_requires_configured_outputs():
-    port = FakePort()
-    backend = PeripheralBackend({"laser": {"control_mode": "relay", "relay_numbers": []}}, port)
-
-    result = backend.set_laser(True)
-
-    assert not result.success
-    assert "relay_numbers" in result.message
-
-
-def test_gripper_open_pulses_then_neutral():
-    port = FakePort()
-    backend = PeripheralBackend({}, port)
-
-    result = backend.gripper_command("open", pulse_seconds=0.02)
-
-    assert result.success
-    assert backend.state.gripper_state == "open"
-    assert port.calls[0][0] == "servo"
-    assert port.calls[-1][0] == "servo"
-    assert port.calls[-1][2] == 1500
-
-
-def test_camera_tilt_mount_initializes_and_steps():
-    port = FakePort()
-    backend = PeripheralBackend({}, port)
-
-    result, tilt = backend.set_camera_tilt("up")
-
-    assert result.success
-    assert tilt.mode == "mount"
-    assert tilt.tilt_centideg == 300
-    assert ("mount_mode", 2) in port.calls
-
-
-def test_smoke_test_node_source_exists():
-    from pathlib import Path
-
-    package_dir = Path(__file__).resolve().parents[1]
-
-    assert (package_dir / "rov_peripherals" / "hardware_smoke_test.py").exists()
-    assert (package_dir / "launch" / "hardware_smoke_test.launch.py").exists()
-    assert (package_dir / "config" / "hardware_smoke_test.yaml").exists()
+if __name__ == "__main__":
+    unittest.main()

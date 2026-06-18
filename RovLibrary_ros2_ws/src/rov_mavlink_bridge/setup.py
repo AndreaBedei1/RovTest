@@ -1,10 +1,25 @@
 from glob import glob
 import os
+import subprocess
+import sys
 
-from setuptools import find_packages, setup
+from setuptools import Command, find_packages, setup
 
 
 package_name = "rov_mavlink_bridge"
+
+
+class PyTestCommand(Command):
+    user_options = []
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        raise SystemExit(subprocess.call([sys.executable, "-m", "pytest", "test"]))
 
 setup(
     name=package_name,
@@ -22,11 +37,10 @@ setup(
     maintainer_email="andrea@example.com",
     description="ROS 2 bridge node for RovLibrary MAVLink telemetry.",
     license="MIT",
-    tests_require=["pytest"],
+    cmdclass={"test": PyTestCommand},
     entry_points={
         "console_scripts": [
             "mavlink_bridge_node = rov_mavlink_bridge.mavlink_bridge_node:main",
         ],
     },
 )
-
