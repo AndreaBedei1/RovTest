@@ -1,7 +1,11 @@
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 
+from rclpy.exceptions import ParameterUninitializedException
+
 from rov_peripherals.backend import CommandResult, PeripheralBackend
+from rov_peripherals.peripherals_node import PeripheralsNode, _coerce_int_array_param
 
 
 class FakePort:
@@ -78,6 +82,52 @@ class PeripheralBackendTest(unittest.TestCase):
         self.assertTrue((package_dir / "rov_peripherals" / "hardware_smoke_test.py").exists())
         self.assertTrue((package_dir / "launch" / "hardware_smoke_test.launch.py").exists())
         self.assertTrue((package_dir / "config" / "hardware_smoke_test.yaml").exists())
+
+
+class DummyLogger:
+    def __init__(self):
+        self.debug_messages = []
+        self.warning_messages = []
+
+    def debug(self, message):
+        self.debug_messages.append(message)
+
+    def warning(self, message):
+        self.warning_messages.append(message)
+
+
+class DummyParameterReader:
+    def __init__(self, value=None, uninitialized=False):
+        self.value = value
+        self.uninitialized = uninitialized
+        self.logger = DummyLogger()
+
+    def get_parameter(self, name):
+        if self.uninitialized:
+            raise ParameterUninitializedException(name)
+        return SimpleNamespace(value=self.value)
+
+    def _param(self, name, default=None):
+        return PeripheralsNode._param(self, name, default)
+
+    def get_logger(self):
+        return self.logger
+
+
+class PeripheralsNodeParameterTest(unittest.TestCase):
+    def test_integer_array_helper_preserves_empty_yaml_list(self):
+        self.assertEqual(_coerce_int_array_param([], [14]), [])
+
+    def test_integer_array_helper_coerces_values_to_ints(self):
+        self.assertEqual(_coerce_int_array_param((1, "2"), []), [1, 2])
+
+    def test_uninitialized_integer_array_uses_safe_default(self):
+        node = DummyParameterReader(uninitialized=True)
+
+        result = PeripheralsNode._int_array_param(node, "laser.relay_numbers", [])
+
+        self.assertEqual(result, [])
+        self.assertEqual(len(node.logger.debug_messages), 1)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from typing import Any
 
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.exceptions import ParameterUninitializedException
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rov_msgs.srv import (
@@ -23,6 +24,18 @@ from rov_msgs.srv import (
 )
 
 from .backend import CommandResult, PeripheralBackend
+
+_PARAM_DEFAULT_UNSET = object()
+
+
+def _coerce_int_array_param(value: Any, default: list[int]) -> list[int]:
+    if value is None:
+        return list(default)
+    if isinstance(value, tuple):
+        value = list(value)
+    if isinstance(value, list):
+        return [int(item) for item in value]
+    return [int(value)]
 
 
 class RosMavlinkCommandPort:
@@ -202,7 +215,7 @@ class PeripheralsNode(Node):
         return {
             "lights": {
                 "default_profile": self._param("lights.default_profile"),
-                "default_servos": self._param("lights.default_servos"),
+                "default_servos": self._int_array_param("lights.default_servos", [13]),
                 "off_pwm": self._param("lights.off_pwm"),
                 "safety_profiles": {
                     "out_of_water": {
@@ -215,8 +228,8 @@ class PeripheralsNode(Node):
             },
             "laser": {
                 "control_mode": self._param("laser.control_mode"),
-                "relay_numbers": self._param("laser.relay_numbers"),
-                "servo_outputs": self._param("laser.servo_outputs"),
+                "relay_numbers": self._int_array_param("laser.relay_numbers", []),
+                "servo_outputs": self._int_array_param("laser.servo_outputs", [14]),
                 "on_pwm": self._param("laser.on_pwm"),
                 "off_pwm": self._param("laser.off_pwm"),
                 "command_rate_hz": self._param("laser.command_rate_hz"),
@@ -259,8 +272,27 @@ class PeripheralsNode(Node):
             },
         }
 
-    def _param(self, name: str) -> Any:
-        return self.get_parameter(name).value
+    def _param(self, name: str, default: Any = _PARAM_DEFAULT_UNSET) -> Any:
+        try:
+            return self.get_parameter(name).value
+        except ParameterUninitializedException:
+            if default is _PARAM_DEFAULT_UNSET:
+                raise
+            self.get_logger().debug(
+                f"Parameter '{name}' is uninitialized; using default {default!r}."
+            )
+            return default
+
+    def _int_array_param(self, name: str, default: list[int]) -> list[int]:
+        value = self._param(name, list(default))
+        try:
+            return _coerce_int_array_param(value, default)
+        except (TypeError, ValueError) as exc:
+            self.get_logger().warning(
+                f"Parameter '{name}' is not a valid integer array ({exc}); "
+                f"using default {default!r}."
+            )
+            return list(default)
 
     def _handle_set_lights(
         self,
