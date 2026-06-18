@@ -1,0 +1,8 @@
+int32 pitch_centideg
+uint16 repeat
+float32 rate_hz
+---
+bool success
+string message
+uint32 commands_sent
+

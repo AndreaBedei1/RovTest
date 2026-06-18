@@ -1,0 +1,9 @@
+uint16[] servo_numbers
+uint16 pwm
+uint16 repeat
+float32 interval_s
+---
+bool success
+string message
+uint32 commands_sent
+

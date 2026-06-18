@@ -1,0 +1,7 @@
+float32 percent
+string profile
+---
+bool success
+string message
+float32 applied_percent
+

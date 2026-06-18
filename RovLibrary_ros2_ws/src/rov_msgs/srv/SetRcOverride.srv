@@ -1,0 +1,9 @@
+uint8[] channels
+uint16[] pwm_values
+uint16 repeat
+float32 rate_hz
+---
+bool success
+string message
+uint32 commands_sent
+

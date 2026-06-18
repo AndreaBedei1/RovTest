@@ -16,6 +16,14 @@ from .telemetry import TelemetryReceiver, TelemetryState
 
 
 LogCallback = Callable[[str, str], None]
+RC_IGNORE = 65535
+RC_RELEASE_LOW = 0
+RC_RELEASE_HIGH = 65534
+
+
+def clamp_pwm(pwm: int) -> int:
+    """Clamp PWM to the conservative range used by the original RovLibrary."""
+    return max(900, min(2100, int(pwm)))
 
 
 class BlueRovCommander:
@@ -115,6 +123,160 @@ class BlueRovCommander:
             0,
             0,
         )
+
+    def set_servo(self, servo_number: int, pwm: int) -> None:
+        """Send one servo PWM command."""
+        self.ensure_connected()
+        assert self.master is not None
+        self.master.mav.command_long_send(
+            self.master.target_system,
+            self.master.target_component,
+            mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
+            0,
+            float(servo_number),
+            float(clamp_pwm(pwm)),
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+
+    def set_servo_group(
+        self,
+        servo_numbers: list[int],
+        pwm: int,
+        repeat: int = 1,
+        interval_s: float = 0.05,
+    ) -> int:
+        """Send servo commands to a list of outputs."""
+        count = 0
+        repeats = max(1, int(repeat))
+        for i in range(repeats):
+            for servo_number in servo_numbers:
+                self.set_servo(servo_number, pwm)
+                count += 1
+            if i < repeats - 1 and interval_s > 0:
+                time.sleep(interval_s)
+        return count
+
+    def set_relay(self, relay_number: int, enabled: bool) -> None:
+        """Send relay ON/OFF command."""
+        self.ensure_connected()
+        assert self.master is not None
+        self.master.mav.command_long_send(
+            self.master.target_system,
+            self.master.target_component,
+            mavutil.mavlink.MAV_CMD_DO_SET_RELAY,
+            0,
+            float(relay_number),
+            1.0 if enabled else 0.0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+
+    def _build_rc_values(self, overrides: dict[int, int | None]) -> list[int]:
+        values = [RC_IGNORE] * 18
+        for channel, pwm in overrides.items():
+            if channel < 1 or channel > 18:
+                raise ValueError(f"Invalid RC channel {channel}, expected 1..18")
+            idx = channel - 1
+            if pwm is None:
+                values[idx] = RC_RELEASE_LOW if channel <= 8 else RC_RELEASE_HIGH
+            else:
+                values[idx] = clamp_pwm(pwm)
+        return values
+
+    def _send_rc_override_once(
+        self,
+        values: list[int],
+        overrides: dict[int, int | None],
+    ) -> None:
+        self.ensure_connected()
+        assert self.master is not None
+        try:
+            self.master.mav.rc_channels_override_send(
+                self.master.target_system,
+                self.master.target_component,
+                *values,
+            )
+        except TypeError as exc:
+            if any(ch > 8 for ch in overrides):
+                raise RuntimeError(
+                    "This pymavlink build supports only RC channels 1-8. "
+                    "Upgrade pymavlink for channels 9-18."
+                ) from exc
+            self.master.mav.rc_channels_override_send(
+                self.master.target_system,
+                self.master.target_component,
+                *values[:8],
+            )
+
+    def send_rc_override(
+        self,
+        overrides: dict[int, int | None],
+        repeat: int = 3,
+        rate_hz: float = 8.0,
+    ) -> int:
+        """Send repeated RC override commands."""
+        values = self._build_rc_values(overrides)
+        gap = 1.0 / max(rate_hz, 1e-3)
+        count = 0
+        for _ in range(max(1, int(repeat))):
+            self._send_rc_override_once(values, overrides)
+            count += 1
+            time.sleep(gap)
+        return count
+
+    def set_mount_mode(self, mode: int) -> None:
+        """Configure camera mount mode."""
+        self.ensure_connected()
+        assert self.master is not None
+        self.master.mav.command_long_send(
+            self.master.target_system,
+            self.master.target_component,
+            mavutil.mavlink.MAV_CMD_DO_MOUNT_CONFIGURE,
+            0,
+            float(mode),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+
+    def set_mount_pitch(
+        self,
+        pitch_centideg: int,
+        repeat: int = 4,
+        rate_hz: float = 20.0,
+    ) -> int:
+        """Send MAVLink mount pitch control commands."""
+        self.ensure_connected()
+        assert self.master is not None
+        gap = 1.0 / max(rate_hz, 1e-3)
+        count = 0
+        for _ in range(max(1, int(repeat))):
+            self.master.mav.command_long_send(
+                self.master.target_system,
+                self.master.target_component,
+                mavutil.mavlink.MAV_CMD_DO_MOUNT_CONTROL,
+                0,
+                float(int(pitch_centideg)),
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                float(mavutil.mavlink.MAV_MOUNT_MODE_MAVLINK_TARGETING),
+            )
+            count += 1
+            time.sleep(gap)
+        return count
 
     def set_flight_mode(self, mode_name: str) -> None:
         """Set the autopilot mode by name using pymavlink's mode mapping."""
@@ -279,10 +441,59 @@ class MavlinkBackend:
             self.commander.set_flight_mode(requested)
         self._log("info", f"Flight mode command sent: {requested}.")
 
+    def set_servo_group(
+        self,
+        servo_numbers: list[int],
+        pwm: int,
+        repeat: int = 1,
+        interval_s: float = 0.05,
+    ) -> int:
+        with self._command_lock:
+            count = self.commander.set_servo_group(servo_numbers, pwm, repeat, interval_s)
+        self._log(
+            "info",
+            f"Servo command sent: servos={servo_numbers}, pwm={clamp_pwm(pwm)}, count={count}.",
+        )
+        return count
+
+    def set_relay(self, relay_number: int, enabled: bool) -> None:
+        with self._command_lock:
+            self.commander.set_relay(relay_number, enabled)
+        self._log("info", f"Relay command sent: relay={relay_number}, enabled={enabled}.")
+
+    def send_rc_override(
+        self,
+        overrides: dict[int, int | None],
+        repeat: int = 3,
+        rate_hz: float = 8.0,
+    ) -> int:
+        with self._command_lock:
+            count = self.commander.send_rc_override(overrides, repeat, rate_hz)
+        self._log("info", f"RC override sent: channels={sorted(overrides)}, count={count}.")
+        return count
+
+    def set_mount_mode(self, mode: int) -> None:
+        with self._command_lock:
+            self.commander.set_mount_mode(mode)
+        self._log("info", f"Mount mode command sent: mode={mode}.")
+
+    def set_mount_pitch(
+        self,
+        pitch_centideg: int,
+        repeat: int = 4,
+        rate_hz: float = 20.0,
+    ) -> int:
+        with self._command_lock:
+            count = self.commander.set_mount_pitch(pitch_centideg, repeat, rate_hz)
+        self._log(
+            "info",
+            f"Mount pitch command sent: pitch_centideg={pitch_centideg}, count={count}.",
+        )
+        return count
+
 
 def _as_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
     except Exception:  # noqa: BLE001
         return default
-

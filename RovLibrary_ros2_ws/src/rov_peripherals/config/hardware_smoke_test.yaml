@@ -1,0 +1,13 @@
+/**:
+  ros__parameters:
+    control_service_prefix: "/rov/control"
+    connection_status_topic: "/rov/connection_status"
+    service_timeout_s: 5.0
+    connection_wait_s: 30.0
+    settle_seconds: 0.4
+    lights_percent: 5.0
+    lights_hold_seconds: 0.7
+    enable_laser_test: false
+    laser_hold_seconds: 0.25
+    enable_gripper_motion: false
+    enable_camera_tilt_motion: true

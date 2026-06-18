@@ -6,10 +6,12 @@ but exposes only a small ROS 2 foundation:
 
 - `rov_msgs`: custom ROV status messages and flight-mode service definition.
 - `rov_mavlink_bridge`: Python MAVLink backend plus ROS 2 bridge node.
-- `rov_bringup`: launch and configuration for the first stage.
+- `rov_peripherals`: internal services for lights, laser, gripper, and camera tilt.
+- `rov_control_manager`: public safe command router for vehicle and peripheral commands.
+- `rov_bringup`: launch and configuration for Stage 1 and Stage 2.
 
-No UI, video, gamepad control, autonomy, or peripheral actuation is implemented
-in this stage.
+No UI, video, gamepad control, or autonomy is implemented in these stages.
+Stage 2 adds only bounded peripheral command services and safe routing.
 
 ## Package Structure
 
@@ -22,7 +24,17 @@ RovLibrary_ros2_ws/
         ConnectionStatus.msg
         VehicleState.msg
       srv/
+        GetCameraTilt.srv
+        GripperCommand.srv
+        SetCameraTilt.srv
         SetFlightMode.srv
+        SetLaser.srv
+        SetLights.srv
+        SetMountControl.srv
+        SetMountMode.srv
+        SetRcOverride.srv
+        SetRelay.srv
+        SetServo.srv
     rov_mavlink_bridge/
       rov_mavlink_bridge/
         backend/
@@ -35,11 +47,34 @@ RovLibrary_ros2_ws/
         mavlink_bridge.launch.py
       test/
         test_telemetry.py
+    rov_peripherals/
+      rov_peripherals/
+        backend/
+          peripheral_backend.py
+        hardware_smoke_test.py
+        peripherals_node.py
+      config/
+        hardware_smoke_test.yaml
+        peripherals.yaml
+      launch/
+        hardware_smoke_test.launch.py
+        peripherals.launch.py
+    rov_control_manager/
+      rov_control_manager/
+        control_manager_node.py
+        safety.py
+      config/
+        control_manager.yaml
+      launch/
+        control_manager.launch.py
     rov_bringup/
       config/
         stage1.yaml
+        stage2.yaml
       launch/
+        rov_peripheral_smoke_test.launch.py
         rov_stage1.launch.py
+        rov_stage2.launch.py
       test/
         test_bringup_layout.py
 ```
@@ -60,11 +95,27 @@ creates these topics:
 
 ## Services
 
+Stage 1 bridge services are still available if launched directly, but Stage 2
+remaps them under `/rov/internal/*`. Use the public `/rov/control/*` services
+when running Stage 2.
+
 | Service | Type | Notes |
 | --- | --- | --- |
-| `/rov/arm` | `std_srvs/srv/Trigger` | Sends `MAV_CMD_COMPONENT_ARM_DISARM` with arm=1. |
-| `/rov/disarm` | `std_srvs/srv/Trigger` | Sends `MAV_CMD_COMPONENT_ARM_DISARM` with arm=0. |
-| `/rov/set_flight_mode` | `rov_msgs/srv/SetFlightMode` | Changes mode by name after allow-list validation. |
+| `/rov/control/arm` | `std_srvs/srv/Trigger` | Manager-checked arm command. |
+| `/rov/control/disarm` | `std_srvs/srv/Trigger` | Manager-checked disarm command. |
+| `/rov/control/set_flight_mode` | `rov_msgs/srv/SetFlightMode` | Manager-checked mode change. |
+| `/rov/control/lights/set` | `rov_msgs/srv/SetLights` | Set lights percent. |
+| `/rov/control/laser/set` | `rov_msgs/srv/SetLaser` | Laser on/off with optional bounded hold. |
+| `/rov/control/gripper/open` | `std_srvs/srv/Trigger` | One gripper open pulse. |
+| `/rov/control/gripper/close` | `std_srvs/srv/Trigger` | One gripper close pulse. |
+| `/rov/control/gripper/stop` | `std_srvs/srv/Trigger` | Neutral gripper stop. |
+| `/rov/control/camera_tilt/set` | `rov_msgs/srv/SetCameraTilt` | `up`, `down`, `center`, or `set`. |
+| `/rov/control/camera_tilt/get` | `rov_msgs/srv/GetCameraTilt` | Current camera tilt state tracked by peripherals. |
+
+Internal Stage 2 services exist under `/rov/internal/*` for routing between
+nodes. They are not the operator/HMI API.
+
+No thruster or vehicle-motion command services are created in this step.
 
 Default allowed modes are:
 
@@ -72,7 +123,8 @@ Default allowed modes are:
 MANUAL, STABILIZE, DEPTH_HOLD, POSHOLD, ALT_HOLD, SURFACE
 ```
 
-Adjust them in `src/rov_bringup/config/stage1.yaml` for your vehicle firmware.
+Adjust them in `src/rov_bringup/config/stage1.yaml` or
+`src/rov_bringup/config/stage2.yaml` for your vehicle firmware.
 
 ## Build
 
@@ -99,7 +151,48 @@ colcon build --symlink-install
 
 ## Run
 
-Default MAVLink endpoint:
+Stage 2, with control manager and peripherals:
+
+```bash
+ros2 launch rov_bringup rov_stage2.launch.py
+```
+
+Override the endpoint:
+
+```bash
+ros2 launch rov_bringup rov_stage2.launch.py mavlink_endpoint:=udpin:0.0.0.0:14550
+```
+
+Peripheral-only real-rover smoke test, starting the Stage 2 stack first:
+
+```bash
+ros2 launch rov_bringup rov_peripheral_smoke_test.launch.py
+```
+
+The smoke test defaults are intentionally conservative:
+
+```bash
+ros2 launch rov_bringup rov_peripheral_smoke_test.launch.py \
+  lights_percent:=5.0 \
+  enable_laser_test:=false \
+  enable_gripper_motion:=false
+```
+
+Opt in to the more hazardous peripheral checks only when the work area is safe:
+
+```bash
+ros2 launch rov_bringup rov_peripheral_smoke_test.launch.py \
+  enable_laser_test:=true \
+  enable_gripper_motion:=true
+```
+
+If Stage 2 is already running, launch only the smoke-test node:
+
+```bash
+ros2 launch rov_peripherals hardware_smoke_test.launch.py
+```
+
+Stage 1 telemetry-only foundation:
 
 ```bash
 ros2 launch rov_bringup rov_stage1.launch.py
@@ -130,11 +223,21 @@ Useful manual checks:
 ros2 topic echo /rov/connection_status
 ros2 topic echo /rov/vehicle_state
 ros2 topic echo /rov/battery
-ros2 service call /rov/disarm std_srvs/srv/Trigger {}
-ros2 service call /rov/set_flight_mode rov_msgs/srv/SetFlightMode "{mode: MANUAL}"
+ros2 service call /rov/control/disarm std_srvs/srv/Trigger {}
+ros2 service call /rov/control/set_flight_mode rov_msgs/srv/SetFlightMode "{mode: MANUAL}"
+ros2 service call /rov/control/lights/set rov_msgs/srv/SetLights "{percent: 0.0, profile: ''}"
+ros2 service call /rov/control/camera_tilt/get rov_msgs/srv/GetCameraTilt {}
 ```
 
-Use `/rov/arm` only when the vehicle is physically safe to arm.
+Use `/rov/control/arm` only when the vehicle is physically safe to arm.
+
+Stage 2 safety defaults:
+
+- Any actuator command is rejected while disconnected.
+- Actuator requests are exposed publicly only through `/rov/control/...`.
+- Armed-state checks are configurable, but disabled by default for peripheral
+  smoke testing because this step does not add thruster or vehicle-motion
+  control.
 
 ## Assumptions
 
@@ -146,4 +249,6 @@ Use `/rov/arm` only when the vehicle is physically safe to arm.
   the exact sensor source is confirmed.
 - Flight-mode names must exist in the autopilot mode mapping exposed by
   `pymavlink`.
-
+- Stage 2 assumes the MAVLink bridge owns the only MAVLink connection. Peripheral
+  nodes route through internal bridge services instead of opening another UDP
+  reader.

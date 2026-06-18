@@ -1,0 +1,73 @@
+/rov/mavlink_bridge:
+  ros__parameters:
+    mavlink_endpoint: "udpin:0.0.0.0:14550"
+    heartbeat_timeout_s: 15.0
+    source_system: 255
+    source_component: 190
+    telemetry_publish_hz: 5.0
+    connection_publish_hz: 1.0
+    connect_on_startup: true
+    allowed_modes:
+      - MANUAL
+      - STABILIZE
+      - DEPTH_HOLD
+      - POSHOLD
+      - ALT_HOLD
+      - SURFACE
+
+/rov/peripherals:
+  ros__parameters:
+    mavlink_service_prefix: "/rov/internal/mavlink"
+    service_timeout_s: 3.0
+    lights.default_profile: "out_of_water"
+    lights.default_servos: [13]
+    lights.off_pwm: 1100
+    lights.out_of_water.max_on_seconds: 2.0
+    lights.in_water.max_on_seconds: 600.0
+    laser.control_mode: "servo"
+    laser.relay_numbers: []
+    laser.servo_outputs: [14]
+    laser.on_pwm: 1900
+    laser.off_pwm: 1100
+    laser.command_rate_hz: 20.0
+    laser.command_repeat: 6
+    laser.off_repeat: 10
+    laser.default_profile: "out_of_water"
+    laser.out_of_water.max_on_seconds: 10.0
+    laser.in_water.max_on_seconds: 600.0
+    gripper.control_mode: "servo"
+    gripper.servo_output: 9
+    gripper.open_pwm: 1900
+    gripper.close_pwm: 1100
+    gripper.neutral_pwm: 1500
+    gripper.neutral_hold_seconds: 0.4
+    gripper.command_rate_hz: 20.0
+    gripper.command_repeat: 6
+    camera.tilt_control_mode: "mount"
+    camera.tilt_rc_channel: 8
+    camera.tilt_min_pwm: 1100
+    camera.tilt_max_pwm: 1900
+    camera.tilt_neutral_pwm: 1500
+    camera.tilt_step_pwm: 30
+    camera.tilt_min_centideg: -4500
+    camera.tilt_max_centideg: 4500
+    camera.tilt_neutral_centideg: 0
+    camera.tilt_step_centideg: 300
+    camera.invert_tilt: false
+    camera.send_repeat: 4
+    camera.send_rate_hz: 20.0
+
+/rov/control_manager:
+  ros__parameters:
+    service_timeout_s: 3.0
+    connection_status_topic: "/rov/connection_status"
+    vehicle_state_topic: "/rov/vehicle_state"
+    internal_arm_service: "/rov/internal/arm"
+    internal_disarm_service: "/rov/internal/disarm"
+    internal_set_flight_mode_service: "/rov/internal/set_flight_mode"
+    internal_peripheral_service_prefix: "/rov/internal/peripherals"
+    require_armed_for_lights_on: false
+    require_armed_for_laser_on: false
+    require_armed_for_gripper_motion: false
+    require_armed_for_camera_tilt: false
+    default_gripper_pulse_seconds: 0.15

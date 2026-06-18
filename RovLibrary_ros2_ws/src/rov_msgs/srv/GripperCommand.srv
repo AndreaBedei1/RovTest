@@ -1,0 +1,7 @@
+string command
+float32 pulse_seconds
+---
+bool success
+string message
+string state
+

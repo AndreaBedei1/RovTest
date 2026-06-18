@@ -1,0 +1,7 @@
+---
+bool success
+string message
+string mode
+int32 tilt_pwm
+int32 tilt_centideg
+

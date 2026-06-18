@@ -8,7 +8,17 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ConnectionStatus.msg"
   "msg/VehicleState.msg"
+  "srv/GetCameraTilt.srv"
+  "srv/GripperCommand.srv"
+  "srv/SetCameraTilt.srv"
   "srv/SetFlightMode.srv"
+  "srv/SetLaser.srv"
+  "srv/SetLights.srv"
+  "srv/SetMountControl.srv"
+  "srv/SetMountMode.srv"
+  "srv/SetRcOverride.srv"
+  "srv/SetRelay.srv"
+  "srv/SetServo.srv"
   DEPENDENCIES std_msgs
 )
 
@@ -19,4 +29,3 @@ endif()
 
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
-

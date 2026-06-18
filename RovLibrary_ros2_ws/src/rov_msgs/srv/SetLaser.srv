@@ -1,0 +1,7 @@
+bool enabled
+float32 hold_seconds
+string profile
+---
+bool success
+string message
+

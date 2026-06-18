@@ -1,0 +1,14 @@
+/**:
+  ros__parameters:
+    service_timeout_s: 3.0
+    connection_status_topic: "/rov/connection_status"
+    vehicle_state_topic: "/rov/vehicle_state"
+    internal_arm_service: "/rov/internal/arm"
+    internal_disarm_service: "/rov/internal/disarm"
+    internal_set_flight_mode_service: "/rov/internal/set_flight_mode"
+    internal_peripheral_service_prefix: "/rov/internal/peripherals"
+    require_armed_for_lights_on: false
+    require_armed_for_laser_on: false
+    require_armed_for_gripper_motion: false
+    require_armed_for_camera_tilt: false
+    default_gripper_pulse_seconds: 0.15

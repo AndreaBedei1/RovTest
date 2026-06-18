@@ -9,7 +9,14 @@ from geometry_msgs.msg import Quaternion
 import rclpy
 from rclpy.node import Node
 from rov_msgs.msg import ConnectionStatus, VehicleState
-from rov_msgs.srv import SetFlightMode
+from rov_msgs.srv import (
+    SetFlightMode,
+    SetMountControl,
+    SetMountMode,
+    SetRcOverride,
+    SetRelay,
+    SetServo,
+)
 from sensor_msgs.msg import BatteryState, Imu
 from std_msgs.msg import Float32
 from std_srvs.srv import Trigger
@@ -77,6 +84,23 @@ class MavlinkBridgeNode(Node):
         self.create_service(Trigger, "arm", self._handle_arm)
         self.create_service(Trigger, "disarm", self._handle_disarm)
         self.create_service(SetFlightMode, "set_flight_mode", self._handle_set_flight_mode)
+        self.create_service(SetServo, "mavlink/set_servo", self._handle_mavlink_set_servo)
+        self.create_service(SetRelay, "mavlink/set_relay", self._handle_mavlink_set_relay)
+        self.create_service(
+            SetRcOverride,
+            "mavlink/set_rc_override",
+            self._handle_mavlink_set_rc_override,
+        )
+        self.create_service(
+            SetMountMode,
+            "mavlink/set_mount_mode",
+            self._handle_mavlink_set_mount_mode,
+        )
+        self.create_service(
+            SetMountControl,
+            "mavlink/set_mount_control",
+            self._handle_mavlink_set_mount_control,
+        )
 
         self.create_timer(
             1.0 / max(0.1, telemetry_publish_hz),
@@ -205,6 +229,8 @@ class MavlinkBridgeNode(Node):
 
     def _handle_arm(self, _request: Trigger.Request, response: Trigger.Response) -> Trigger.Response:
         self.get_logger().warning("Arm service requested.")
+        if not self._require_connected(response):
+            return response
         try:
             self._backend.arm_vehicle()
         except Exception as exc:  # noqa: BLE001
@@ -223,6 +249,8 @@ class MavlinkBridgeNode(Node):
         response: Trigger.Response,
     ) -> Trigger.Response:
         self.get_logger().warning("Disarm service requested.")
+        if not self._require_connected(response):
+            return response
         try:
             self._backend.disarm_vehicle()
         except Exception as exc:  # noqa: BLE001
@@ -254,6 +282,8 @@ class MavlinkBridgeNode(Node):
             )
             self.get_logger().warning(response.message)
             return response
+        if not self._require_connected(response):
+            return response
 
         self.get_logger().warning(f"Flight mode service requested: {requested}.")
         try:
@@ -267,6 +297,129 @@ class MavlinkBridgeNode(Node):
         response.success = True
         response.message = f"Flight mode command sent: {requested}."
         return response
+
+    def _handle_mavlink_set_servo(
+        self,
+        request: SetServo.Request,
+        response: SetServo.Response,
+    ) -> SetServo.Response:
+        if not self._require_connected(response):
+            return response
+        if not request.servo_numbers:
+            response.success = False
+            response.message = "No servo outputs provided."
+            return response
+        try:
+            response.commands_sent = self._backend.set_servo_group(
+                [int(value) for value in request.servo_numbers],
+                int(request.pwm),
+                repeat=max(1, int(request.repeat)),
+                interval_s=max(0.0, float(request.interval_s)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            response.success = False
+            response.message = f"Servo command failed: {exc}"
+            self.get_logger().error(response.message)
+            return response
+        response.success = True
+        response.message = "Servo command sent."
+        return response
+
+    def _handle_mavlink_set_relay(
+        self,
+        request: SetRelay.Request,
+        response: SetRelay.Response,
+    ) -> SetRelay.Response:
+        if not self._require_connected(response):
+            return response
+        try:
+            self._backend.set_relay(int(request.relay_number), bool(request.enabled))
+        except Exception as exc:  # noqa: BLE001
+            response.success = False
+            response.message = f"Relay command failed: {exc}"
+            self.get_logger().error(response.message)
+            return response
+        response.success = True
+        response.message = "Relay command sent."
+        return response
+
+    def _handle_mavlink_set_rc_override(
+        self,
+        request: SetRcOverride.Request,
+        response: SetRcOverride.Response,
+    ) -> SetRcOverride.Response:
+        if not self._require_connected(response):
+            return response
+        if len(request.channels) != len(request.pwm_values):
+            response.success = False
+            response.message = "channels and pwm_values must have the same length."
+            return response
+        try:
+            overrides = {
+                int(channel): (None if int(pwm) == 0 else int(pwm))
+                for channel, pwm in zip(request.channels, request.pwm_values)
+            }
+            response.commands_sent = self._backend.send_rc_override(
+                overrides,
+                repeat=max(1, int(request.repeat)),
+                rate_hz=max(1.0, float(request.rate_hz)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            response.success = False
+            response.message = f"RC override failed: {exc}"
+            self.get_logger().error(response.message)
+            return response
+        response.success = True
+        response.message = "RC override sent."
+        return response
+
+    def _handle_mavlink_set_mount_mode(
+        self,
+        request: SetMountMode.Request,
+        response: SetMountMode.Response,
+    ) -> SetMountMode.Response:
+        if not self._require_connected(response):
+            return response
+        try:
+            self._backend.set_mount_mode(int(request.mode))
+        except Exception as exc:  # noqa: BLE001
+            response.success = False
+            response.message = f"Mount mode command failed: {exc}"
+            self.get_logger().error(response.message)
+            return response
+        response.success = True
+        response.message = "Mount mode command sent."
+        return response
+
+    def _handle_mavlink_set_mount_control(
+        self,
+        request: SetMountControl.Request,
+        response: SetMountControl.Response,
+    ) -> SetMountControl.Response:
+        if not self._require_connected(response):
+            return response
+        try:
+            response.commands_sent = self._backend.set_mount_pitch(
+                int(request.pitch_centideg),
+                repeat=max(1, int(request.repeat)),
+                rate_hz=max(1.0, float(request.rate_hz)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            response.success = False
+            response.message = f"Mount control command failed: {exc}"
+            self.get_logger().error(response.message)
+            return response
+        response.success = True
+        response.message = "Mount control command sent."
+        return response
+
+    def _require_connected(self, response: Any) -> bool:
+        status = self._backend.connection_status()
+        if bool(status["connected"]):
+            return True
+        response.success = False
+        response.message = f"MAVLink is not connected: {status['status_text']}"
+        return False
 
 
 def _maybe_float(value: Any) -> float | None:
@@ -316,4 +469,3 @@ def main(args: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-

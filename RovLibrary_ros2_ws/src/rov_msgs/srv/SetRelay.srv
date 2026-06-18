@@ -1,0 +1,6 @@
+uint16 relay_number
+bool enabled
+---
+bool success
+string message
+

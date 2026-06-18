@@ -1,23 +1,20 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>rov_mavlink_bridge</name>
-  <version>0.1.0</version>
-  <description>ROS 2 bridge node for RovLibrary MAVLink telemetry and safe state services.</description>
+  <name>rov_control_manager</name>
+  <version>0.2.0</version>
+  <description>Safe high-level command router for vehicle and peripheral control.</description>
   <maintainer email="andrea@example.com">Andrea</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
-  <depend>geometry_msgs</depend>
   <depend>rclpy</depend>
   <depend>rov_msgs</depend>
-  <depend>sensor_msgs</depend>
-  <depend>std_msgs</depend>
   <depend>std_srvs</depend>
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
-  <exec_depend>python3-pymavlink</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 </package>
+
