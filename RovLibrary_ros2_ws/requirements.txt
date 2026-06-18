@@ -1,3 +1,8 @@
-pymavlink>=2.4.40
-pytest>=7.0
-
+# Windows / Python 3.8.3 reproducible dependency set.
+#
+# pymavlink 2.4.49 is available as a cp38 Windows wheel. Without the fastcrc
+# pin, pip may try fastcrc 0.3.6 from source on Python 3.8, which can fail while
+# installing build dependencies. fastcrc 0.3.2 has a cp38-win_amd64 wheel.
+fastcrc==0.3.2
+pymavlink==2.4.49
+pytest>=7.0,<9.0

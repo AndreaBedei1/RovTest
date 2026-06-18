@@ -18,6 +18,9 @@ Stage 2 adds only bounded peripheral command services and safe routing.
 ```text
 RovLibrary_ros2_ws/
   requirements.txt
+  scripts/
+    preflight_ros2_windows.py
+    setup_windows_ros2_conda.bat
   src/
     rov_msgs/
       msg/
@@ -126,6 +129,46 @@ MANUAL, STABILIZE, DEPTH_HOLD, POSHOLD, ALT_HOLD, SURFACE
 Adjust them in `src/rov_bringup/config/stage1.yaml` or
 `src/rov_bringup/config/stage2.yaml` for your vehicle firmware.
 
+## Windows Setup
+
+Use a normal `cmd.exe` or Anaconda Prompt where `conda` is on `PATH`.
+The setup script creates or reuses a conda environment named `ros2` with
+Python 3.8.3, installs the pinned Python requirements, checks for ROS 2 Humble,
+and runs preflight.
+
+```bat
+cd /d C:\Users\Andrea\Desktop\RovTest\RovLibrary_ros2_ws
+scripts\setup_windows_ros2_conda.bat
+```
+
+If ROS 2 Humble is installed somewhere non-standard, set `ROS2_SETUP_BAT` first:
+
+```bat
+cd /d C:\Users\Andrea\Desktop\RovTest\RovLibrary_ros2_ws
+set ROS2_SETUP_BAT=C:\dev\ros2_humble\local_setup.bat
+scripts\setup_windows_ros2_conda.bat
+```
+
+Manual preflight after opening a fresh shell:
+
+```bat
+cd /d C:\Users\Andrea\Desktop\RovTest\RovLibrary_ros2_ws
+conda activate ros2
+call C:\dev\ros2_humble\local_setup.bat
+python scripts\preflight_ros2_windows.py
+```
+
+The Python dependency set is pinned for Windows/Python 3.8.3:
+
+```text
+fastcrc==0.3.2
+pymavlink==2.4.49
+pytest>=7.0,<9.0
+```
+
+The `fastcrc` pin avoids the failing `fastcrc 0.3.6` source-build path on
+Python 3.8 Windows.
+
 ## Build
 
 From a ROS 2 environment:
@@ -142,11 +185,13 @@ source install/setup.bash
 On a native Windows ROS 2 shell, use the same workspace path and source the
 generated setup script with:
 
-```powershell
-cd C:\Users\Andrea\Desktop\RovTest\RovLibrary_ros2_ws
-python -m pip install -r requirements.txt
+```bat
+cd /d C:\Users\Andrea\Desktop\RovTest\RovLibrary_ros2_ws
+conda activate ros2
+call C:\dev\ros2_humble\local_setup.bat
+python scripts\preflight_ros2_windows.py
 colcon build --symlink-install
-.\install\setup.ps1
+call install\setup.bat
 ```
 
 ## Run
@@ -217,19 +262,27 @@ colcon test --event-handlers console_direct+
 colcon test-result --verbose
 ```
 
-Useful manual checks:
+Safe local checks:
+
+```bat
+python scripts\preflight_ros2_windows.py
+colcon list --base-paths src
+colcon test --event-handlers console_direct+
+colcon test-result --verbose
+```
+
+Safe read-only runtime checks:
 
 ```bash
 ros2 topic echo /rov/connection_status
 ros2 topic echo /rov/vehicle_state
 ros2 topic echo /rov/battery
-ros2 service call /rov/control/disarm std_srvs/srv/Trigger {}
-ros2 service call /rov/control/set_flight_mode rov_msgs/srv/SetFlightMode "{mode: MANUAL}"
-ros2 service call /rov/control/lights/set rov_msgs/srv/SetLights "{percent: 0.0, profile: ''}"
 ros2 service call /rov/control/camera_tilt/get rov_msgs/srv/GetCameraTilt {}
 ```
 
-Use `/rov/control/arm` only when the vehicle is physically safe to arm.
+Do not call arm, disarm, flight-mode, thruster, or actuator-setting services
+during setup validation. The peripheral smoke-test launch is for a later
+real-rover validation step after the workspace builds and the test area is safe.
 
 Stage 2 safety defaults:
 
